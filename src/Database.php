@@ -1,32 +1,52 @@
 <?php
+declare(strict_types=1);
+
 namespace Taskboard;
 
-final class TasksController
+use PDO;
+use PDOException;
+use RuntimeException;
+// These are buil
+//RuntimeException extends the base Exception class, what is interesting that it is used to detect exception dynamically.
+
+//Don't extend this class.
+final class Database
 {
-    // For Day 1: hard-coded data to prove the plumbing
-    public function index(): void
+    private static ?PDO $pdo = null;
+
+
+    public static function conn(): PDO
     {
-        // Normally you would fetch from DB; we'll stub it out
-        $tasks = [
-            [
-                'id' => 1,
-                'title' => 'Write REST demo',
-                'status' => 'open',
-                'created_at' => '2025-08-25T15:30:51Z',
-                'updated_at' => '2025-08-25T15:30:51Z'
-            ],
-            [
-                'id' => 2,
-                'title' => 'Read docs',
-                'status' => 'in_progress',
-                'created_at' => '2025-08-26T10:00:00Z',
-                'updated_at' => '2025-08-26T10:00:00Z'
-            ],
-        ];
+        //We expect a pdo object to be returned.
+        if (self::$pdo) return self::$pdo;
+        //If we already have a pdo object, return it; Don't create multiple PDOs for the same app.
 
-        // Pagination headers (stubbed)
-        header('X-Total-Count: 2');
+        $path = __DIR__ . '/../storage/database.sqlite';
+        $dsn  = 'sqlite:' . $path;
+        //A PDO need two things, the path to the database and the driver type.
 
-        Http::json($tasks, 200);
+
+        try {
+            $pdo = new PDO($dsn);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+            //Set some attributes for the PDO object.
+            //The second line here is setting the way we fitch the data, here we want it to be similar to php arrays.
+            //The first line is checking the ERRMODE attribute, if true then throw the exception.
+        } catch (PDOException $e) {
+            throw new RuntimeException('Database connection failed: ' . $e->getMessage(), 0, $e);
+        }
+
+        return self::$pdo = $pdo;
+    }
+
+    public static function runSchema(string $file): void
+    {
+        $sql = @file_get_contents($file);
+        if ($sql === false) {
+            throw new RuntimeException('Cannot read schema file: ' . $file);
+        }
+        self::conn()->exec($sql);
     }
 }

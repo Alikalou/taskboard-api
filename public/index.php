@@ -1,48 +1,48 @@
 <?php
 declare(strict_types=1);
-//Strict typing, if passed with the wrong type php will throw an error.
 
-
-require __DIR__ . '/../src/Http.php';
-require __DIR__ . '/../src/Router.php';
-require __DIR__ . '/../src/TasksController.php';
-//These are the include C-like statements that bring in the files we need to run the code.
-
+require_once __DIR__ . '/../src/Http.php';
+require_once __DIR__ . '/../src/Router.php';
+require_once __DIR__ . '/../src/TasksController.php';
+require_once __DIR__ . '/../src/Database.php';
+require_once __DIR__ . '/../src/TasksRepository.php';
 
 use Taskboard\Http;
 use Taskboard\Router;
 use Taskboard\TasksController;
-//Name spaces, which I don't know much about.
+use Taskboard\Database;
+use Taskboard\TasksRepository;
 
+// 1) Bootstrap: schema + PDO (idempotent)
+Database::runSchema(__DIR__ . '/../storage/schema.sql');
 
-// Basic headers for JSON APIs
-Http::cors();                    // Allow cross-origin for local dev
-Http::forceJsonResponse();       // Content-Type: application/json
-//Here, we are forcing the response to follow the JSON format.
-// cors() is not well understood yet.
+// 2) Global headers for a JSON API
+Http::cors();              // add CORS headers
+Http::forceJsonResponse(); // Content-Type: application/json
 
-// Instantiate router and register routes
+// 2a) Short-circuit CORS preflight
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    // Add any extra allow headers if your frontend needs them
+    http_response_code(204);
+    exit;
+}
+
+// 3) Build dependencies
 $router = new Router();
-$tasks  = new TasksController();
-//This is OOP, Router() is a class, and we are creating an instance of it called $router.
-//Of course, this standard class has a definition, and below you can see that we are accessing the method ...
-//get() of the class Router(), the method takes two parameters, the path and to dispatch to the proper task controller.
+$repo   = new TasksRepository(Database::conn());
+$tasks  = new TasksController($repo);
 
+// 4) Routes (note: second arg is a PHP callable; [$instance, 'method'] is valid)
+$router->get('/v1/tasks',          [$tasks, 'index']);   // list
+$router->get('/v1/tasks/{id}',     [$tasks, 'show']);    // read one
+$router->post('/v1/tasks',         [$tasks, 'store']);   // create
+$router->put('/v1/tasks/{id}',     [$tasks, 'update']);  // update
+$router->delete('/v1/tasks/{id}',  [$tasks, 'destroy']); // delete
+$router->get('/v1/health',         function () { Http::json(['status' => 'ok'], 200); });
 
+// 5) Dispatch: make sure to pass only the path, not the full URI with query
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$uri    = $_SERVER['REQUEST_URI'] ?? '/';
+$path   = parse_url($uri, PHP_URL_PATH) ?: '/';
 
-// v1 routes
-$router->get('/v1/tasks',        [$tasks, 'index']);   // list tasks
-$router->get('/v1/health',       fn() => Http::json(['ok' => true]));
-//The arrow here is just the dot operator in OOP
-//So, we are registering the routes here, two routes are available in the program,
-//These are the v1/tasks and v1/health routes.
-//but what is really the second argument in the get() method?
-//The first one is a callable, which is an array with two elements, the first is the instance of the class TasksController() and the second is the method index() of that class.
-
-
-// Dispatch
-$router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', $_SERVER['REQUEST_URI'] ?? '/');
-
-//Two things to know here, registering routes and dispatching them (sending them to the proper controller).
-//Both get, and dispatch in the methods to apply the two principles above.
-//
+$router->dispatch($method, $path);
