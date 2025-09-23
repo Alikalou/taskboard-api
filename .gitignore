@@ -12,3 +12,6 @@ Thumbs.db
 
 # Cache/logs
 *.log
+
+# Ignore local SQLite database
+/storage/database.sqlite
