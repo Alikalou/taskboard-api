@@ -60,6 +60,79 @@ final class TasksRepository
         $stmt->execute([':id' => $id]);
         return $stmt->rowCount() > 0;
     }
+
+    public function countByCriteria(?string $status, ?string $q): int
+    {
+    $where  = [];
+    $params = [];
+
+    if ($status !== null && $status !== '') {
+        $where[] = 'status = :status';
+        $params[':status'] = $status;
+    }
+    if ($q !== null && $q !== '') {
+        $where[] = '(title LIKE :q OR description LIKE :q)';
+        $params[':q'] = '%' . $q . '%';
+    }
+
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $sql = "SELECT COUNT(*) FROM tasks $whereSql";
+
+    $stmt = $this->pdo->prepare($sql);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->execute();
+    return (int)$stmt->fetchColumn();
+    }
+
+    
+    public function findByCriteria(
+        ?string $status,
+        ?string $q,
+        string $sortBy,
+        string $sortDir,
+        int $limit,
+        int $offset
+    ): array {
+        $where  = [];
+        $params = [];
+
+        if ($status !== null && $status !== '') {
+            $where[] = 'status = :status';
+            $params[':status'] = $status;
+        }
+        if ($q !== null && $q !== '') {
+            $where[] = '(title LIKE :q OR description LIKE :q)';
+            $params[':q'] = '%' . $q . '%';
+        }
+
+        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        // Whitelist sortable columns (never interpolate arbitrary input)
+        $sortable = ['id','title','status','created_at','updated_at'];
+        if (!in_array($sortBy, $sortable, true)) {
+            $sortBy = 'created_at';
+        }
+        $sortDir = strtolower($sortDir) === 'asc' ? 'ASC' : 'DESC';
+
+        $sql = "SELECT id, title, status, created_at, updated_at
+                FROM tasks
+                $whereSql
+                ORDER BY $sortBy $sortDir
+                LIMIT :limit OFFSET :offset";
+
+        $stmt = $this->pdo->prepare($sql);
+
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':limit',  $limit,  \PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+
+        $stmt->execute();
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
 }
 
 /* This task repository class defines the basic CRUD operations, using prepared statements to prevent SQL injection.
